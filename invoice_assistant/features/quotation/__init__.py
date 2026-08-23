@@ -1,0 +1,1 @@
+"""Quotation feature HTTP boundary."""

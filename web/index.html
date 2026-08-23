@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>发票报销管理助手</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">票</div>
+        <div><strong>报销助手</strong><span>LOCAL WORKSPACE</span></div>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-item active" data-page="dashboard"><span>◫</span>仪表盘</button>
+        <button class="nav-item" data-page="intake"><span>＋</span>录入中心 <b id="nav-draft-count" class="nav-badge">0</b></button>
+        <button class="nav-item" data-page="pool"><span>☷</span>待报销条目 <b id="nav-pool-count" class="nav-badge">0</b></button>
+        <button class="nav-item" data-page="workspace"><span>▣</span>本次报销</button>
+        <button class="nav-item" data-page="history"><span>◷</span>报销历史</button>
+        <button class="nav-item" data-page="quotation"><span>¥</span>报价测算</button>
+        <button class="nav-item" data-page="settings"><span>⚙</span>设置</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="local-status"><i></i><span>本地数据已连接</span></div>
+        <small>数据与密钥只保存在本机</small>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="page-eyebrow">REIMBURSEMENT DESK</p>
+          <h1 id="page-title">仪表盘</h1>
+          <p id="page-subtitle" class="subtitle">掌握每一笔报销的材料与进度</p>
+        </div>
+        <div class="top-actions">
+          <span class="date-chip" id="today-chip"></span>
+          <button class="btn primary" data-global-action="manual">＋ 手工录入</button>
+        </div>
+      </header>
+      <section id="page-content" class="page-content" aria-live="polite">
+        <div class="loading-card"><span class="spinner"></span>正在加载本地数据…</div>
+      </section>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="assertive"></div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

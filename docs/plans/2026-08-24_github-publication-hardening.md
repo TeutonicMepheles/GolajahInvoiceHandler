@@ -1,6 +1,6 @@
 # GitHub 首次发布与隐私加固
 
-Status: Active
+Status: Implemented
 
 Last verified: 2026-08-24
 
@@ -31,6 +31,13 @@ Last verified: 2026-08-24
 - 匿名 DOCX 包内 `word/media/` 为 0，正文无邮箱/电话/地址/真实组织或金额，core properties 无 creator/lastModifiedBy；模板和合成导出均完成逐页版面检查。
 - 报价专项测试、全量 pytest、所有 `web/*.js` 的 `node --check` 均通过。
 - GitHub 仓库 `GolajahInvoiceHandler` 为 private，远端 `main` 与本地 HEAD 一致，远端文件树重新通过敏感路径和秘密门禁。
+
+## 实施证据
+
+- 私有发布候选只包含 100 个批准文件；敏感路径、受限扩展名、高可信凭据、本机绝对路径、邮箱和手机号扫描均为 0，`.env.example` 的识别密钥保持为空。
+- 匿名 DOCX 的 `word/media/` 为 0，creator 与 lastModifiedBy 为空，正文未命中联系方式、本机路径或真实组织信息。
+- 在净化候选仓库中完成报价专项回归（8 passed）、全量回归（171 passed）及全部 10 个 `web/*.js` 文件的 `node --check`。
+- GitHub 仓库 `TeutonicMepheles/GolajahInvoiceHandler` 已确认为 private，默认分支为 `main`；推送后远端 HEAD 与本地 HEAD 一致，远端文件树复扫仍为 0 个发布阻断项。
 
 ## 回滚边界
 

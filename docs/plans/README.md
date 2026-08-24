@@ -2,7 +2,7 @@
 
 | Topic | Status | Scope | Summary | Last verified |
 |---|---|---|---|---|
-| [GitHub First Publication and Privacy Hardening](2026-08-24_github-publication-hardening.md) | Active | private GitHub publication, secret and financial-detail scrubbing, explicit staged allowlist | 以首个无敏感历史的提交发布匿名源码，并在本地与远端执行秘密、PII、路径、二进制和敏感目录门禁 | 2026-08-24 |
+| [GitHub First Publication and Privacy Hardening](2026-08-24_github-publication-hardening.md) | Implemented | private GitHub publication, secret and financial-detail scrubbing, explicit staged allowlist | 已以批准文件白名单完成私有 GitHub 首次发布；本地与远端提交一致，秘密、PII、路径、二进制和敏感目录门禁均通过 | 2026-08-24 |
 | [Reimbursement Batch Return and Merge](2026-08-24_batch-return-and-merge.md) | Implemented | universal history return-to-edit, same-project drafts merged into the current target, unified export, unchanged Agent tools, docs/tests | 已完成所有历史报销包退回编辑、同项目处理中包安全并入当前目标、恢复快照与统一导出闭环，Agent 工具清单未扩展 | 2026-08-24 |
 | [Document Intake Association and Preview](2026-08-24_document-intake-association-preview.md) | Implemented | intake frontend Feature, additive association/preview API, drag-and-drop, docked image/PDF reader, docs/tests | 已修复旧后台路由表导致的附件关联 404，并完成图片/PDF 右侧内嵌阅读器、版本能力保护与正式服务实机验收 | 2026-08-24 |
 | [Windows Local Agent MCP](2026-08-23_windows-local-agent-mcp.md) | Implemented | STDIO MCP, API consistency contracts, Windows Codex/Hermes registration, isolated validation | 已完成受控 Agent 接入、双客户端实机验收、一致恢复演练和生产切换；默认 15 项工具、写审批、版本/幂等/核对与文件授权边界均已验证 | 2026-08-24 |

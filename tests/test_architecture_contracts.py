@@ -139,6 +139,10 @@ def test_document_intake_every_file_role_has_clickable_thumbnails_in_both_views(
     assert '<button class="document-thumbnail-preview"' in thumbnail
     assert 'data-preview-attachment="${attachment.id}"' in thumbnail
     assert 'aria-controls="document-preview-dock"' in thumbnail
+    assert "attachment.category_label" in thumbnail
+    assert "材料类型：${esc(categoryLabel)}" in thumbnail
+    assert "attachment.size_bytes" not in thumbnail
+    assert "fmtFileSize" not in intake
     assert '<a class="document-thumbnail-preview"' not in thumbnail
     assert 'target="_blank"' not in thumbnail
 
@@ -153,6 +157,8 @@ def test_document_intake_every_file_role_has_clickable_thumbnails_in_both_views(
         assert "(item.attachments || []).map((attachment) => attachmentThumbnail(" in table_renderer
 
     assert "attachment.preview_url" in inline_preview
+    assert '`${categoryLabel} · ${fileFormat}`' in inline_preview
+    assert "attachment.size_bytes" not in inline_preview
     assert "attachment.download_url" not in inline_preview
     assert 'fetch(previewUrl, { method: "HEAD", cache: "no-store" })' in inline_preview
     assert '<iframe class="document-preview-frame"' in inline_preview
@@ -165,6 +171,51 @@ def test_document_intake_every_file_role_has_clickable_thumbnails_in_both_views(
     assert 'error.code === "not_found"' in intake
     assert "$$('[data-preview-attachment]'" in preview_wiring
     assert "openAttachmentPreview(root, attachment)" in preview_wiring
+
+
+def test_document_intake_required_material_slots_share_dynamic_direct_upload_flow(app):
+    intake = (
+        _project_root(app) / "web" / "features" / "document-intake" / "index.js"
+    ).read_text(encoding="utf-8")
+    slot_derivation = intake.split("function missingMaterialSlots", 1)[1].split(
+        "function pendingMaterialMessages", 1
+    )[0]
+    card_renderer = intake.split("function mainDraftCard", 1)[1].split(
+        "function supportingDraftCard", 1
+    )[0]
+    table_renderer = intake.split("function mainDraftTable", 1)[1].split(
+        "function supportingDraftTable", 1
+    )[0]
+
+    assert "item.material?.requirements" in slot_derivation
+    assert 'foreign_payment_rmb: "payment_record"' in intake
+    assert "attachedCategories.has(category)" in slot_derivation
+    assert "requiredMaterialPanel(item)" in card_renderer
+    assert 'requiredMaterialPanel(item, "table")' in table_renderer
+    assert 'data-material-slot-category="${esc(slot.category)}"' in intake
+    assert 'data-material-slot-picker' in intake
+    assert '>选择文件</button>' in intake
+    assert "function selectMaterialSlot(" in intake
+    assert 'slot.classList.toggle("selected", selected)' in intake
+    assert "已选中，可按 Ctrl+V 粘贴" in intake
+    assert 'form.append("category", category)' in intake
+    assert "api(`/items/${item.id}/attachments`" in intake
+    assert "function recognizedPaymentRmb(" in intake
+    assert "列表和材料要求已更新" in intake
+    assert "clipboardData?.items" in intake
+    assert 'slot.addEventListener("paste"' in intake
+    assert 'document.addEventListener("paste"' in intake
+    assert 'state.page !== "intake"' in intake
+    assert "visibleSlots.find(" in intake
+    assert "请先点击要粘贴的材料空槽" in intake
+    assert "isTextEditingTarget(event.target)" in intake
+
+    upload_flow = intake.split("const uploadMaterialFile", 1)[1].split(
+        "const materialSlots", 1
+    )[0]
+    assert upload_flow.index("await refresh()") < upload_flow.index(
+        "列表和材料要求已更新"
+    )
 
 
 def test_shared_frontend_modules_do_not_depend_on_app_or_features(app):

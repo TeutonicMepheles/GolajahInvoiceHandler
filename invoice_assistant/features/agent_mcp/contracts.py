@@ -12,6 +12,14 @@ EXTERNAL_NOTICE = (
     "若本地后端已配置识别凭据，此文件内容将发送至 DeepSeek 进行识别；"
     "未配置时仅保存为手工处理记录。"
 )
+MATERIAL_SLOT_GUIDANCE = (
+    "To fill required-material slots, read the current item first and inspect "
+    "material.missing. Map foreign_payment_rmb or payment_record to category "
+    "payment_record, and purchase_list to category purchase_list. Use the returned "
+    "item version and batch version, then call get_invoice_item again after every "
+    "attachment write because payment recognition can change the amount, versions, "
+    "and remaining requirements."
+)
 MAX_MONEY_CENTS = 10_000_000_000_000
 
 
@@ -458,8 +466,8 @@ TOOL_MANIFEST: tuple[ToolContract, ...] = (
         True,
         False,
     ),
-    contract("list_invoice_drafts", "List pending-confirmation drafts using stable keyset pagination.", input_schema(PAGINATION_INPUT), obj({"items": array(ITEM_SUMMARY)}, ("items",)), True, False, True, False),
-    contract("get_invoice_item", "Read one invoice item, including its current review token when it is a draft.", input_schema({"item_id": ID}, ("item_id",)), ITEM_DETAIL, True, False, True, False),
+    contract("list_invoice_drafts", "List pending-confirmation drafts using stable keyset pagination. Each item's material.missing is the authoritative required-material status.", input_schema(PAGINATION_INPUT), obj({"items": array(ITEM_SUMMARY)}, ("items",)), True, False, True, False),
+    contract("get_invoice_item", "Read one invoice item, including current versions, required-material status, attachments, and the review token when it is a draft.", input_schema({"item_id": ID}, ("item_id",)), ITEM_DETAIL, True, False, True, False),
     contract(
         "update_invoice_item",
         "Update explicit invoice fields. Read the item again before confirming it.",
@@ -536,7 +544,7 @@ TOOL_MANIFEST: tuple[ToolContract, ...] = (
     ),
     contract(
         "add_invoice_attachment",
-        "Add one local file to a mutable invoice. For payment records: " + EXTERNAL_NOTICE,
+        "Add one local file to a mutable invoice. " + MATERIAL_SLOT_GUIDANCE + " For payment records: " + EXTERNAL_NOTICE,
         {
             **input_schema(
                 {

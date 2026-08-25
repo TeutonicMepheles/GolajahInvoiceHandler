@@ -296,6 +296,66 @@ def test_payment_record_association_refreshes_foreign_reimbursement_amount(app, 
     assert item["reimbursement_amount"] == 321.09
 
 
+def test_direct_payment_attachment_reveals_high_value_purchase_list_requirement(app, client):
+    app.config["RECOGNIZER"] = _recognizer_for(
+        {
+            "foreign.png": {
+                "document_type": "foreign_invoice",
+                "currency": "USD",
+                "amount": 175,
+                "converted_amount": None,
+            },
+            "payment.png": {
+                "document_type": "payment_record",
+                "currency": "CNY",
+                "amount": 1200,
+                "converted_amount": 1200,
+            },
+        }
+    )
+    target = _import(client, "foreign.png")
+    assert [entry["code"] for entry in target["material"]["missing"]] == [
+        "foreign_payment_rmb"
+    ]
+
+    payment = client.post(
+        f"/api/items/{target['id']}/attachments",
+        data={
+            "expected_version": str(target["version"]),
+            "category": "payment_record",
+            "file": (image_bytes("payment"), "payment.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert payment.status_code == 201, payment.get_json()
+    paid_item = payment.get_json()["item"]
+    assert paid_item["converted_amount"] == 1200
+    assert paid_item["reimbursement_amount"] == 1200
+    assert [entry["code"] for entry in paid_item["material"]["missing"]] == [
+        "purchase_list"
+    ]
+
+    purchase_list = client.post(
+        f"/api/items/{target['id']}/attachments",
+        data={
+            "expected_version": str(paid_item["version"]),
+            "category": "purchase_list",
+            "file": (pdf_bytes("purchase list"), "purchase-list.pdf"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert purchase_list.status_code == 201, purchase_list.get_json()
+    complete_item = purchase_list.get_json()["item"]
+    assert complete_item["material"]["complete"] is True
+    assert [entry["category"] for entry in complete_item["attachments"]] == [
+        "foreign_invoice",
+        "purchase_list",
+        "payment_record",
+    ]
+
+
 def test_attachment_preview_and_thumbnail_support_images_and_pdf(app, client):
     app.config["RECOGNIZER"] = _recognizer_for(
         {

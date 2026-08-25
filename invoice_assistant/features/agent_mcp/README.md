@@ -22,6 +22,29 @@ Registration, removal, and allowed-root changes rotate or revoke a generation le
 
 Client capability checks are pinned to the Windows builds accepted by the owning Plan. Codex must echo every machine-verifiable frozen transport, allowlist, and timeout field; its non-echoed writes policy is checked in TOML and still requires the Plan's separate real-session approval evidence. Hermes additionally requires the inspected fail-closed per-call trust-gate source beside the validated executable; this source check is not represented as a fresh UI approval observation.
 
+## Required-material workflow
+
+The existing tools mirror the browser's required-material slots; no separate tool
+or CLI command is needed:
+
+1. Call `list_invoice_drafts` or `list_invoice_items` to find entries whose
+   `material.complete` is false, then call `get_invoice_item` for the chosen item.
+2. Treat `material.missing` as authoritative. Map `foreign_payment_rmb` and
+   `payment_record` to the `payment_record` attachment category, and map
+   `purchase_list` to `purchase_list`. Do not guess a file or target item.
+3. Call `add_invoice_attachment` with a fresh UUID v4 `operation_id`, the absolute
+   file path under a registered allowed root, the current item `version`, the
+   current `batch_ref.batch_version` when present, and the mapped `category`.
+   Payment records also require the published external-processing acknowledgement.
+4. Call `get_invoice_item` again after every successful write. Use only the new
+   versions and new `material.missing` result for the next upload; payment
+   recognition may update the reimbursable RMB amount and immediately reveal a
+   purchase-list requirement.
+
+This recipe preserves the 17-tool manifest and all existing HTTP contracts. A
+write result contains resource references, so it is not a substitute for the
+authoritative post-write read.
+
 ## Dependencies
 
 Runtime dependencies are the MCP Python SDK, `requests`, and the public invoice-assistant HTTP API. Registration additionally uses `tomlkit` and `ruamel.yaml`. No frontend module depends on this package.

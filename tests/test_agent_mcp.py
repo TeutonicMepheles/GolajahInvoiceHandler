@@ -16,6 +16,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from invoice_assistant.features.agent_mcp.client import ClientError, HttpResult, LeaseGuard, LocalInvoiceClient
 from invoice_assistant.features.agent_mcp.contracts import (
     EXTERNAL_NOTICE,
+    MATERIAL_SLOT_GUIDANCE,
     TOOL_MANIFEST,
     exposed_contracts,
 )
@@ -102,6 +103,18 @@ def test_manifest_is_exact_strict_and_file_tools_fail_closed():
         "prompt",
     }
     assert not any(fragment in entry.name for entry in TOOL_MANIFEST for fragment in forbidden_fragments)
+
+
+def test_required_material_slot_workflow_is_published_in_mcp_discovery():
+    contracts = {entry.name: entry for entry in TOOL_MANIFEST}
+    assert "material.missing" in contracts["list_invoice_drafts"].description
+    assert "required-material status" in contracts["get_invoice_item"].description
+
+    attachment_description = contracts["add_invoice_attachment"].description
+    assert MATERIAL_SLOT_GUIDANCE in attachment_description
+    assert "foreign_payment_rmb or payment_record to category payment_record" in attachment_description
+    assert "purchase_list to category purchase_list" in attachment_description
+    assert "call get_invoice_item again after every attachment write" in attachment_description
 
 
 def test_external_processing_ack_is_schema_enforced_before_file_use():

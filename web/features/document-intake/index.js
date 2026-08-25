@@ -5,8 +5,24 @@ import { busy, emptyState, toast } from "../../shared/ui.js";
 
 const INTERNAL_DND_MIME = "application/x-invoice-assistant-supporting-draft";
 const SERVICE_RESTART_MESSAGE = "本地服务仍在运行旧版本，请重启本地应用后刷新页面再关联附件。";
+const MATERIAL_SLOT_CATEGORY = {
+  foreign_payment_rmb: "payment_record",
+  payment_record: "payment_record",
+  purchase_list: "purchase_list",
+};
+const SUPPORTED_UPLOAD_EXTENSIONS = /\.(pdf|png|jpe?g|webp)$/i;
+const CLIPBOARD_EXTENSION = {
+  "application/pdf": "pdf",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
 let activePreviewAttachmentId = null;
 let previewRequestSequence = 0;
+let activeMaterialPasteHandler = null;
+let activeMaterialSlotKey = null;
+
+document.addEventListener("paste", (event) => activeMaterialPasteHandler?.(event));
 
 const fmtDate = (value) => value
   ? new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })
@@ -78,27 +94,21 @@ function documentIntakeCapability(name) {
   return state.bootstrap?.capabilities?.[name] === true;
 }
 
-function fmtFileSize(sizeBytes) {
-  const bytes = Math.max(0, Number(sizeBytes || 0));
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function attachmentThumbnail(attachment, primaryCodes, compact = false, surface = "card") {
   const thumbnailUrl = safeAttachmentUrl(attachment.thumbnail_url);
   const isPdf = attachment.mime_type === "application/pdf";
   const isTable = surface === "table";
-  const role = isPrimaryAttachment(attachment, primaryCodes) ? "主凭据" : "附件";
+  const categoryLabel = attachment.category_label || "未知材料";
   const isActive = Number(activePreviewAttachmentId) === Number(attachment.id);
   return `<div class="document-thumbnail ${compact ? "compact" : ""} ${isTable ? "table" : ""} ${isActive ? "is-preview-active" : ""}" data-attachment-tile="${attachment.id}">
-    <button class="document-thumbnail-preview" type="button" data-preview-attachment="${attachment.id}" aria-label="在右侧预览 ${esc(attachment.original_name)}" aria-controls="document-preview-dock" aria-expanded="${isActive ? "true" : "false"}">
+    <button class="document-thumbnail-preview" type="button" data-preview-attachment="${attachment.id}" aria-label="在右侧预览${esc(categoryLabel)} ${esc(attachment.original_name)}" aria-controls="document-preview-dock" aria-expanded="${isActive ? "true" : "false"}">
       ${thumbnailUrl ? `<img src="${esc(thumbnailUrl)}" alt="${esc(attachment.original_name)} 的缩略图" loading="lazy" data-thumbnail-image="${attachment.id}">` : ""}
       <span class="document-thumbnail-fallback" ${thumbnailUrl ? "hidden" : ""} data-thumbnail-fallback="${attachment.id}"><b>${isPdf ? "PDF" : "文件"}</b><small>点击预览</small></span>
-      <span class="document-thumbnail-role ${isPrimaryAttachment(attachment, primaryCodes) ? "primary" : ""}">${role}</span>
+      <span class="document-thumbnail-category ${isPrimaryAttachment(attachment, primaryCodes) ? "primary" : ""}">${esc(categoryLabel)}</span>
     </button>
     <div class="document-thumbnail-meta">
       <strong title="${esc(attachment.original_name)}">${esc(attachment.original_name)}</strong>
-      <small>${fmtFileSize(attachment.size_bytes)} · ${esc(attachment.category_label)}</small>
+      <small class="document-thumbnail-type">材料类型：${esc(categoryLabel)}</small>
       ${isTable ? "" : `<select data-attachment-category="${attachment.id}" aria-label="${esc(attachment.original_name)} 的材料类型">${categoryOptions(attachment.category)}</select>`}
     </div>
   </div>`;
@@ -125,6 +135,54 @@ function associationTargetOptions(targets) {
   return targets.map((target) => `<option value="${target.id}">#${target.id} · ${esc(target.merchant || "未命名主凭据")} · ${fmtDate(target.expense_date)}</option>`).join("");
 }
 
+function missingMaterialSlots(item) {
+  const attachedCategories = new Set((item.attachments || []).map((attachment) => attachment.category));
+  return (item.material?.requirements || []).flatMap((requirement) => {
+    if (requirement.satisfied) return [];
+    const category = MATERIAL_SLOT_CATEGORY[requirement.code];
+    if (!category || attachedCategories.has(category)) return [];
+    const label = requirement.code === "foreign_payment_rmb" ? "支付记录" : requirement.label;
+    return [{ code: requirement.code, category, label }];
+  });
+}
+
+function pendingMaterialMessages(item) {
+  const attachedCategories = new Set((item.attachments || []).map((attachment) => attachment.category));
+  return (item.material?.requirements || []).flatMap((requirement) => {
+    if (requirement.satisfied) return [];
+    if (requirement.code === "foreign_payment_rmb" && attachedCategories.has("payment_record")) {
+      return ["支付记录已附带，人民币实付金额仍待确认"];
+    }
+    if (!MATERIAL_SLOT_CATEGORY[requirement.code]) return [`${requirement.label}仍待补充`];
+    return [];
+  });
+}
+
+function materialSlot(item, slot, surface = "card") {
+  const compact = surface === "table" ? " compact" : "";
+  const inputId = `material-slot-file-${surface}-${item.id}-${slot.code}`;
+  const slotKey = `${item.id}:${slot.category}`;
+  const selected = activeMaterialSlotKey === slotKey;
+  return `<div class="material-upload-slot${compact} ${selected ? "selected" : ""}" tabindex="0" role="group" data-material-slot data-material-slot-key="${esc(slotKey)}" data-material-slot-item="${item.id}" data-material-slot-category="${esc(slot.category)}" data-material-slot-label="${esc(slot.label)}" aria-label="${selected ? "已选中" : "选择"}主凭据 #${item.id} 的${esc(slot.label)}粘贴槽">
+    <span class="material-slot-icon" aria-hidden="true">${selected ? "✓" : "＋"}</span>
+    <span class="material-slot-copy"><strong>${esc(slot.label)}空槽</strong><small data-material-slot-instruction>${selected ? `已选中，可按 Ctrl+V 粘贴${esc(slot.label)}` : "点击槽位选中粘贴目标，也可直接拖入文件"}</small></span>
+    <button class="btn small material-slot-picker" type="button" data-material-slot-picker aria-label="为主凭据 #${item.id} 的${esc(slot.label)}选择文件">选择文件</button>
+    <input id="${inputId}" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" data-material-slot-input hidden>
+  </div>`;
+}
+
+function requiredMaterialPanel(item, surface = "card") {
+  const slots = missingMaterialSlots(item);
+  const pending = pendingMaterialMessages(item);
+  const content = slots.length
+    ? slots.map((slot) => materialSlot(item, slot, surface)).join("")
+    : pending.length
+      ? pending.map((message) => `<div class="material-slot-status pending"><span>…</span><small>${esc(message)}</small></div>`).join("")
+      : '<div class="material-slot-status complete"><span>✓</span><small>当前所需附件已齐全</small></div>';
+  if (surface === "table") return `<div class="table-material-slots">${content}</div>`;
+  return `<section class="required-materials"><div class="required-materials-heading"><strong>尚需附带</strong><span>${slots.length ? `${slots.length} 个附件空槽` : pending.length ? "等待金额确认" : "材料已齐"}</span></div><div class="required-material-grid">${content}</div></section>`;
+}
+
 function mainDraftCard(item, primaryCodes) {
   const isTarget = isPrimaryTarget(item, primaryCodes);
   const primaryAttachments = (item.attachments || []).filter((attachment) => isPrimaryAttachment(attachment, primaryCodes));
@@ -142,7 +200,7 @@ function mainDraftCard(item, primaryCodes) {
   return `<article class="card draft-card document-main-card ${isTarget ? "is-association-target" : "is-manual"}" data-main-draft-card="${item.id}" ${isTarget ? `data-association-target="${item.id}"` : ""}>
     ${isTarget ? '<div class="association-drop-overlay" aria-hidden="true"><strong>放开以关联附件</strong><small>附件将归入这份主凭据</small></div>' : ""}
     <div class="draft-head"><div class="draft-select-title"><input type="checkbox" data-select-draft="${item.id}" ${state.selectedDrafts.has(item.id) ? "checked" : ""} aria-label="选择草稿 #${item.id}"><div><strong>${isTarget ? "主凭据" : "手工录入"} #${item.id}</strong><small>创建于 ${fmtTime(item.created_at)}</small></div></div><span class="badge ${isTarget ? "info" : "muted"}">${isTarget ? "待核对" : "无文件"}</span></div>
-    <div class="draft-body">${recognitionError}${uncertainty}${duplicateMatches(item, primaryCodes)}${primaryMedia}${associatedMedia}
+    <div class="draft-body">${recognitionError}${uncertainty}${duplicateMatches(item, primaryCodes)}${primaryMedia}${associatedMedia}${requiredMaterialPanel(item)}
       <div class="form-grid document-fields">
         <div class="field"><label>商户 / 收款方</label><input name="merchant" maxlength="200" value="${esc(item.merchant)}"></div>
         <div class="field"><label>消费日期</label><input name="expense_date" type="date" value="${esc(item.expense_date)}"></div>
@@ -183,7 +241,7 @@ function issueBadge(item, primaryCodes) {
 
 function mainDraftTable(items, primaryCodes) {
   if (!items.length) return emptyState("票", "尚无主凭据", "导入发票、Invoice 或 Receipt；识别不准确时也可在附件区修正类型。");
-  return `<div class="card table-card"><div class="table-scroll"><table class="data draft-table document-main-table"><thead><tr><th>选择</th><th>主条目</th><th>创建时间</th><th>商户 / 用途</th><th>日期</th><th>金额</th><th>项目</th><th>全部文件预览</th><th>核对状态</th><th>操作</th></tr></thead><tbody>${items.map((item) => {
+  return `<div class="card table-card"><div class="table-scroll"><table class="data draft-table document-main-table"><thead><tr><th>选择</th><th>主条目</th><th>创建时间</th><th>商户 / 用途</th><th>日期</th><th>金额</th><th>项目</th><th>全部文件预览</th><th>尚需附带</th><th>核对状态</th><th>操作</th></tr></thead><tbody>${items.map((item) => {
     const primaryCount = (item.attachments || []).filter((attachment) => isPrimaryAttachment(attachment, primaryCodes)).length;
     const supportingCount = (item.attachments || []).length - primaryCount;
     const target = isPrimaryTarget(item, primaryCodes);
@@ -191,7 +249,7 @@ function mainDraftTable(items, primaryCodes) {
     const filePreviews = files
       ? `<div class="table-thumbnail-list" aria-label="草稿 #${item.id} 的全部文件">${files}</div>`
       : '<span class="table-sub">手工条目，无原始文件</span>';
-    return `<tr class="document-main-row ${target ? "is-association-target" : ""}" ${target ? `data-association-target="${item.id}"` : ""}><td><input type="checkbox" data-select-draft="${item.id}" ${state.selectedDrafts.has(item.id) ? "checked" : ""} aria-label="选择草稿 #${item.id}"></td><td><span class="table-main">#${item.id} · ${target ? "主凭据" : "手工条目"}</span><span class="table-sub">${primaryCount} 份主文件${supportingCount ? ` · ${supportingCount} 份附件` : ""}</span></td><td>${fmtTime(item.created_at)}</td><td><span class="table-main">${esc(item.merchant || "待填写")}</span><span class="table-sub">${esc(item.purpose || "未填写用途")}</span></td><td>${fmtDate(item.expense_date)}</td><td><span class="table-main">${fmtItemAmount(item)}</span></td><td>${esc(item.project_name || "—")}</td><td class="table-preview-cell">${filePreviews}</td><td>${issueBadge(item, primaryCodes)}</td><td><div class="table-actions"><button class="btn small" type="button" data-edit-main="${item.id}">编辑</button><button class="btn primary small" type="button" data-review-draft="${item.id}">确认</button><button class="btn danger small" type="button" data-delete-draft="${item.id}">删除</button></div></td></tr>`;
+    return `<tr class="document-main-row ${target ? "is-association-target" : ""}" ${target ? `data-association-target="${item.id}"` : ""}><td><input type="checkbox" data-select-draft="${item.id}" ${state.selectedDrafts.has(item.id) ? "checked" : ""} aria-label="选择草稿 #${item.id}"></td><td><span class="table-main">#${item.id} · ${target ? "主凭据" : "手工条目"}</span><span class="table-sub">${primaryCount} 份主文件${supportingCount ? ` · ${supportingCount} 份附件` : ""}</span></td><td>${fmtTime(item.created_at)}</td><td><span class="table-main">${esc(item.merchant || "待填写")}</span><span class="table-sub">${esc(item.purpose || "未填写用途")}</span></td><td>${fmtDate(item.expense_date)}</td><td><span class="table-main">${fmtItemAmount(item)}</span></td><td>${esc(item.project_name || "—")}</td><td class="table-preview-cell">${filePreviews}</td><td>${requiredMaterialPanel(item, "table")}</td><td>${issueBadge(item, primaryCodes)}</td><td><div class="table-actions"><button class="btn small" type="button" data-edit-main="${item.id}">编辑</button><button class="btn primary small" type="button" data-review-draft="${item.id}">确认</button><button class="btn danger small" type="button" data-delete-draft="${item.id}">删除</button></div></td></tr>`;
   }).join("")}</tbody></table></div></div>`;
 }
 
@@ -305,7 +363,9 @@ async function openAttachmentPreview(root, attachment) {
   layout.classList.add("preview-open");
   dock.hidden = false;
   $("[data-document-preview-name]", dock).textContent = attachment.original_name || "文件预览";
-  $("[data-document-preview-meta]", dock).textContent = `${attachment.mime_type === "application/pdf" ? "PDF" : "图片"} · ${fmtFileSize(attachment.size_bytes)}`;
+  const categoryLabel = attachment.category_label || "未知材料";
+  const fileFormat = attachment.mime_type === "application/pdf" ? "PDF" : "图片";
+  $("[data-document-preview-meta]", dock).textContent = `${categoryLabel} · ${fileFormat}`;
   body.innerHTML = '<div class="document-preview-message loading" role="status"><span class="document-preview-spinner" aria-hidden="true"></span><strong>正在加载在线预览…</strong><p>文件不会被下载到本地。</p></div>';
   updatePreviewSelection(root, attachment.id);
 
@@ -389,6 +449,66 @@ function internalDrag(event) {
 function externalFileDrag(event) {
   const types = [...(event.dataTransfer?.types || [])];
   return types.includes("Files") && !types.includes(INTERNAL_DND_MIME);
+}
+
+function clipboardFiles(event) {
+  const itemFiles = [...(event.clipboardData?.items || [])]
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  return itemFiles.length ? itemFiles : [...(event.clipboardData?.files || [])];
+}
+
+function normalizedClipboardFile(file) {
+  if (SUPPORTED_UPLOAD_EXTENSIONS.test(file.name || "")) return file;
+  const extension = CLIPBOARD_EXTENSION[String(file.type || "").toLowerCase()];
+  if (!extension) return file;
+  return new File([file], `剪贴板-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified || Date.now(),
+  });
+}
+
+function isSupportedUpload(file) {
+  return Boolean(file && (
+    SUPPORTED_UPLOAD_EXTENSIONS.test(file.name || "")
+    || Object.hasOwn(CLIPBOARD_EXTENSION, String(file.type || "").toLowerCase())
+  ));
+}
+
+function isTextEditingTarget(target) {
+  return Boolean(target?.closest?.("input:not([type=file]), textarea, select, [contenteditable=true]"));
+}
+
+function selectMaterialSlot(root, selectedSlot, { announce = true } = {}) {
+  activeMaterialSlotKey = selectedSlot.dataset.materialSlotKey;
+  $$('[data-material-slot]', root).forEach((slot) => {
+    const selected = slot.dataset.materialSlotKey === activeMaterialSlotKey;
+    const label = slot.dataset.materialSlotLabel || "附件";
+    const itemId = slot.dataset.materialSlotItem;
+    slot.classList.toggle("selected", selected);
+    slot.setAttribute("aria-label", `${selected ? "已选中" : "选择"}主凭据 #${itemId} 的${label}粘贴槽`);
+    const icon = $(".material-slot-icon", slot);
+    const instruction = $("[data-material-slot-instruction]", slot);
+    if (icon) icon.textContent = selected ? "✓" : "＋";
+    if (instruction) instruction.textContent = selected
+      ? `已选中，可按 Ctrl+V 粘贴${label}`
+      : "点击槽位选中粘贴目标，也可直接拖入文件";
+  });
+  selectedSlot.focus();
+  if (announce) toast(`已选择${selectedSlot.dataset.materialSlotLabel || "附件"}槽，可按 Ctrl+V 粘贴对应材料。`);
+}
+
+function recognizedPaymentRmb(item) {
+  const payment = [...(item?.attachments || [])]
+    .reverse()
+    .find((attachment) => attachment.category === "payment_record");
+  const recognition = payment?.ai_raw || {};
+  const value = recognition.converted_amount ?? (
+    String(recognition.currency || "").toUpperCase() === "CNY" ? recognition.amount : null
+  );
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
 function clearDropFeedback(root) {
@@ -502,6 +622,121 @@ export function renderDocumentIntake(options) {
     zone.classList.remove("drag");
     importFiles([...event.dataTransfer.files]);
   });
+
+  const uploadMaterialFile = async (slot, sourceFile) => {
+    const item = itemById.get(Number(slot.dataset.materialSlotItem));
+    if (!item || slot.classList.contains("uploading")) return;
+    const file = normalizedClipboardFile(sourceFile);
+    if (!isSupportedUpload(file)) {
+      toast("仅支持 PDF、PNG、JPG/JPEG 或 WEBP 文件。", "error");
+      return;
+    }
+    slot.classList.add("uploading");
+    slot.classList.remove("drag");
+    slot.setAttribute("aria-busy", "true");
+    const label = slot.dataset.materialSlotLabel || "附件";
+    const category = slot.dataset.materialSlotCategory;
+    const done = busy(`正在补充${label}…`);
+    try {
+      const form = new FormData();
+      form.append("expected_version", String(item.version));
+      if (item.batch_ref) form.append("expected_batch_version", String(item.batch_ref.batch_version));
+      form.append("category", category);
+      form.append("file", file, file.name);
+      const payload = await api(`/items/${item.id}/attachments`, { method: "POST", body: form });
+      const recognizedAmount = category === "payment_record" ? recognizedPaymentRmb(payload.item) : null;
+      activeMaterialSlotKey = null;
+      await refresh();
+      if (category === "payment_record") {
+        toast(recognizedAmount != null
+          ? `已识别人民币实付 ${recognizedAmount.toFixed(2)} CNY，列表和材料要求已更新。`
+          : "支付记录已上传，但未识别到人民币实付金额，请手工确认。");
+      } else {
+        toast(payload.message || `${label}已附带到主凭据 #${item.id}`);
+      }
+    } catch (error) {
+      await reportMutationFailure(onMutationFailure, error, refresh);
+    } finally {
+      done();
+      if (slot.isConnected) {
+        slot.classList.remove("uploading", "drag");
+        slot.removeAttribute("aria-busy");
+        const input = $("[data-material-slot-input]", slot);
+        if (input) input.value = "";
+      }
+    }
+  };
+
+  const materialSlots = $$('[data-material-slot]', root);
+  if (!materialSlots.some((slot) => slot.dataset.materialSlotKey === activeMaterialSlotKey)) {
+    activeMaterialSlotKey = null;
+  }
+  materialSlots.forEach((slot) => {
+    const input = $("[data-material-slot-input]", slot);
+    const pickerButton = $("[data-material-slot-picker]", slot);
+    slot.addEventListener("click", (event) => {
+      if (event.target === input || event.target.closest("[data-material-slot-picker]")) return;
+      if (!slot.classList.contains("uploading")) selectMaterialSlot(root, slot);
+    });
+    slot.addEventListener("keydown", (event) => {
+      if (event.target !== slot) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      if (!slot.classList.contains("uploading")) selectMaterialSlot(root, slot);
+    });
+    if (pickerButton) pickerButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!slot.classList.contains("uploading")) input?.click();
+    });
+    if (input) input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (file) uploadMaterialFile(slot, file);
+    });
+    ["dragenter", "dragover"].forEach((name) => slot.addEventListener(name, (event) => {
+      if (!externalFileDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "copy";
+      slot.classList.add("drag");
+    }));
+    slot.addEventListener("dragleave", (event) => {
+      if (!slot.contains(event.relatedTarget)) slot.classList.remove("drag");
+    });
+    slot.addEventListener("drop", (event) => {
+      if (!externalFileDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      slot.classList.remove("drag");
+      const file = event.dataTransfer.files?.[0];
+      if (file) uploadMaterialFile(slot, file);
+    });
+    slot.addEventListener("paste", (event) => {
+      const file = clipboardFiles(event)[0];
+      if (!file) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (slot.dataset.materialSlotKey !== activeMaterialSlotKey) {
+        selectMaterialSlot(root, slot, { announce: false });
+        toast(`已选择${slot.dataset.materialSlotLabel || "附件"}槽，请再次按 Ctrl+V 粘贴。`);
+        return;
+      }
+      uploadMaterialFile(slot, file);
+    });
+  });
+  activeMaterialPasteHandler = (event) => {
+    if (state.page !== "intake" || !root.isConnected) return;
+    if (isTextEditingTarget(event.target)) return;
+    const visibleSlots = $$('[data-material-slot]', root);
+    const file = clipboardFiles(event)[0];
+    if (!file) return;
+    event.preventDefault();
+    const selectedSlot = visibleSlots.find((slot) => slot.dataset.materialSlotKey === activeMaterialSlotKey);
+    if (!selectedSlot) {
+      toast("请先点击要粘贴的材料空槽，再按 Ctrl+V。", "error");
+      return;
+    }
+    uploadMaterialFile(selectedSlot, file);
+  };
 
   wireThumbnailPreviews(root, attachments);
   $("#close-document-preview", root).onclick = () => closeAttachmentPreview(root);

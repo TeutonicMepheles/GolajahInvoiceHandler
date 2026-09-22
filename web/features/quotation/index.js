@@ -15,6 +15,7 @@ function nextQuotationNodeId(prefix) {
   state.quotationNodeSequence += 1;
   return `${prefix}-${state.quotationNodeSequence}`;
 }
+
 function distributeQuotationAmounts(total, count, roundingUnit) {
   if (!count) return [];
   const totalUnits = Math.round(Number(total) / Number(roundingUnit));

@@ -6,6 +6,8 @@
 
 ## 稳定入口
 
+Windows 用户可下载 Release 中的 Windows ZIP，解压后双击 `Install-Windows.cmd`。需要预先安装 Python 3.12 并联网安装依赖；详见 [Windows 部署说明](docs/windows-deployment.md)。发布包不包含用户数据或密钥。
+
 首次安装时，在 PowerShell 中进入本目录并运行：
 
 ```powershell

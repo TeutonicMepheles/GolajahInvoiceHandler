@@ -7,6 +7,7 @@ export function toast(message, type = "success") {
   $("#toast-root").append(node);
   setTimeout(() => node.remove(), 3800);
 }
+
 export function busy(message = "正在处理…") {
   const node = document.createElement("div");
   node.className = "busy-overlay";

@@ -2,6 +2,7 @@
 
 | Topic | Status | Scope | Summary | Last verified |
 |---|---|---|---|---|
+| [Windows Release](2026-09-22_windows-release.md) | Implemented | source allowlist, Windows installer entry, deployment docs, ZIP and checksums | 整合本地源码并发布不含用户数据的 Windows 部署包 | 2026-09-22 |
 | [Intake Required Material Slots](2026-08-24_intake-required-material-slots.md) | Implemented | explicit paste-target selection, immediate payment recognition refresh, category-first metadata, direct drop/picker/paste upload, MCP recipe, docs/tests | 已完成材料空槽交互与识别刷新，并通过现有 MCP 工具发布缺件映射、版本前置条件和写后重读流程 | 2026-08-26 |
 | [GitHub Publication Hardening](2026-08-24_github-publication-hardening.md) | Implemented | repository boundary, secret/financial redaction, anonymous DOCX template, private GitHub publication | 已以批准文件白名单完成私有 GitHub 首次发布；本地与远端提交一致，秘密、PII、路径、二进制和敏感目录门禁均通过 | 2026-08-24 |
 | [Reimbursement Batch Return and Merge](2026-08-24_batch-return-and-merge.md) | Implemented | universal history return-to-edit, same-project drafts merged into the current target, unified export, unchanged Agent tools, docs/tests | 已完成所有历史报销包退回编辑、同项目处理中包安全并入当前目标、恢复快照与统一导出闭环，Agent 工具清单未扩展 | 2026-08-24 |
